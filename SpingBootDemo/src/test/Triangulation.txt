@@ -1,0 +1,280 @@
+package net.biancheng.www;
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.TypeReference;
+import net.biancheng.www.bean.FingerprintStructure;
+import net.biancheng.www.bean.Person;
+import net.biancheng.www.bean.user;
+import net.biancheng.www.bean.userDemo;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.ujmp.core.DenseMatrix;
+import org.ujmp.core.Matrix;
+
+import javax.servlet.ServletInputStream;
+import javax.servlet.http.HttpServletRequest;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.stream.Collectors;
+
+@Controller
+public class HelloController {
+
+
+    @Autowired //自动装配并不能会调用到初始化函数
+    private FingerprintDatabase fingerprintDatabase;
+
+    @Autowired
+    private Person person;
+    @ResponseBody
+    @RequestMapping("/hello")
+    public Person hello() {
+        System.out.print("hello!!");
+        return person;
+    }
+
+    @PostMapping(value = "/hello")
+    @ResponseBody
+    public String hello(HttpServletRequest request) {
+        System.out.println("post hello!");
+        Date date=new Date();
+        SimpleDateFormat format=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        System.out.println("Current Time:"+format.format(date));
+
+        ServletInputStream is = null;
+        try {
+            is = request.getInputStream();
+            StringBuilder sb = new StringBuilder();
+            byte[] buf = new byte[1024];
+            int len = 0;
+            while ((len = is.read(buf)) != -1) {
+                sb.append(new String(buf, 0, len));
+            }
+            System.out.println(sb.toString());
+            String str = "hello baby!";
+            return str;
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                if (is != null) {
+                    is.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return null;
+    }
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+    @PostMapping(value = "/login")
+    @ResponseBody
+    public int login(HttpServletRequest request) {
+        //login登录接口
+        //从数据库中获取数据与请求进行匹配
+        System.out.println("hello login post!");
+        userDemo userdemo = null;
+        int resultInt=-1;
+        ServletInputStream is = null;
+        try {
+            is = request.getInputStream();
+            StringBuilder sb = new StringBuilder();
+            byte[] buf = new byte[1024];
+            int len = 0;
+            while ((len = is.read(buf)) != -1) {
+                sb.append(new String(buf, 0, len));
+            }
+            System.out.println(sb.toString());
+            userdemo=JSON.parseObject(sb.toString(),userDemo.class);
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                if (is != null) {
+                    is.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        String sqlQuery = "select name,iphone,position,account from user where account = '"+userdemo.getAccount()+"' and password = '"+userdemo.getPassword()+"';";
+        System.out.println(sqlQuery);
+        List<Map<String, Object>> list =  jdbcTemplate.queryForList(sqlQuery);
+        System.out.println("list count:"+list.size());
+        if(list.size()>=1){
+            resultInt = list.size();
+            Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+            String sqlUpdate = "UPDATE user SET last_login_time='"+timestamp+"'  WHERE account = '"+userdemo.getAccount()+"' and password = '"+userdemo.getPassword()+"'; ";
+            System.out.println(sqlUpdate);
+            jdbcTemplate.update(sqlUpdate);
+        }
+        for (Map<String, Object> map : list) {
+            Set<Entry<String, Object>> entries = map.entrySet( );
+            if(entries != null) {
+                Iterator<Entry<String, Object>> iterator = entries.iterator( );
+                while(iterator.hasNext( )) {
+                    Entry<String, Object> entry =(Entry<String, Object>) iterator.next( );
+                    Object key = entry.getKey( );
+                    Object value = entry.getValue();
+                    System.out.println(key+":"+value);
+                }
+            }
+        }
+
+        return resultInt;
+    }
+
+    @PostMapping(value = "/register")
+    @ResponseBody
+    public int register(HttpServletRequest request) {
+        //注册新用户
+        //往数据库里写入
+        System.out.println("hello register post!");
+        user User = null;
+        int errcode;
+        ServletInputStream is = null;
+        try {
+            is = request.getInputStream();
+            StringBuilder sb = new StringBuilder();
+            byte[] buf = new byte[1024];
+            int len = 0;
+            while ((len = is.read(buf)) != -1) {
+                sb.append(new String(buf, 0, len));
+            }
+            System.out.println(sb.toString());
+            User= JSON.parseObject(sb.toString(), user.class);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                if (is != null) {
+                    is.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        String name = (String) User.getName();
+        String password = (String) User.getPassword();
+        String account = (String) User.getAccount();
+        String phone = (String) User.getIphone();
+        int position = (int) User.getPosition();
+        Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+        User.setLast_login_time(timestamp.toString());
+        String sqlInsert = "insert into user(name,iphone,account,password,position,last_login_time) values('"+name+"','"+phone+"','"+account+"','"+password+"',"+position+",'"+timestamp+"');";
+        System.out.println(sqlInsert);
+        try {
+            errcode = jdbcTemplate.update(sqlInsert);
+        }catch (DuplicateKeyException e){
+            System.out.print("Duplicate primary key!!"+e.getMessage());//主键重复
+            errcode = -1;
+        }
+
+        //jdbcTemplate.execute(sqlInsert);
+        return errcode;
+    }
+
+
+    @PostMapping(value = "/location")
+    @ResponseBody
+    public JSONObject location(HttpServletRequest request){
+        //从请求中获取json数据，然后计算，然后再打包成json原路返回
+        //1. 将接收到的数据转为json
+        System.out.println("hello location post!");
+        net.sf.json.JSONObject jsonObject = null;
+        int resultInt=-1;
+        ServletInputStream is = null;
+        try {
+            is = request.getInputStream();
+            StringBuilder sb = new StringBuilder();
+            byte[] buf = new byte[1024];
+            int len = 0;
+            while ((len = is.read(buf)) != -1) {
+                sb.append(new String(buf, 0, len));
+            }
+            System.out.println(sb.toString());
+            jsonObject = net.sf.json.JSONObject.fromObject(sb.toString());
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                if (is != null) {
+                    is.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        //2. 拿出其中的currentAccount，去数据库拿这个用户的相关信息保存起来，后面会需要用到。
+        String currentUser = jsonObject.getString("currentUser");
+        String queryCurrentUserInfo = "select name,account,position,iphone from user where account = '"+currentUser+"'";
+        System.out.println("sql query current user:"+queryCurrentUserInfo);
+        List<Map<String, Object>> list =  jdbcTemplate.queryForList(queryCurrentUserInfo);
+        //遍历整个Map
+//        for(Map<String,Object> map:list){
+//            System.out.println(map.toString());
+//        }
+
+        //定位计算
+        Map<String, Integer> params = JSONObject.parseObject(jsonObject.getString("wifi_rssi"), new TypeReference<Map<String, Integer>>(){});
+        float forecast_x = 0.0f , forecast_y = 0.0f;
+        if(params.containsKey("a4:1a:3a:96:36:42")&&params.containsKey("a4:1a:3a:95:9c:82")&&params.containsKey("a4:1a:3a:96:4e:5d")){
+            Map<String,Integer> triNatiMap = new HashMap<>();
+            triNatiMap.put("a4:1a:3a:96:36:42",params.get("a4:1a:3a:96:36:42"));  //3
+            triNatiMap.put("a4:1a:3a:95:9c:82",params.get("a4:1a:3a:95:9c:82"));  //2
+            triNatiMap.put("a4:1a:3a:96:4e:5d",params.get("a4:1a:3a:96:4e:5d"));  //1
+            Iterator<Entry<String, Integer>> entries = triNatiMap.entrySet().iterator();
+            while (entries.hasNext()) {
+                Entry<String, Integer> entry = entries.next();
+                String key = entry.getKey();
+                Integer value = entry.getValue();
+                System.out.println(key + ":" + value);
+            }
+            Map<String,Double> distanceMap = new HashMap<>();
+            distanceMap.put("a4:1a:3a:96:36:42",Math.pow(10,(double)(triNatiMap.get("a4:1a:3a:96:36:42")-(-27.7))/(double) (-10*2.53112))/(double) 0.6);
+            distanceMap.put("a4:1a:3a:95:9c:82",Math.pow(10,(double)(triNatiMap.get("a4:1a:3a:95:9c:82")-(-27.7))/(double) (-10*2.53112))/(double) 0.6);
+            distanceMap.put("a4:1a:3a:96:4e:5d",Math.pow(10,(double)(triNatiMap.get("a4:1a:3a:96:4e:5d")-(-27.7))/(double) (-10*2.53112))/(double) 0.6);
+            Iterator<Entry<String, Double>> entriess = distanceMap.entrySet().iterator();
+            while (entriess.hasNext()) {
+                Entry<String, Double> entry = entriess.next();
+                String key = entry.getKey();
+                Double value = entry.getValue();
+                System.out.println(key + ":" + value);
+            }
+            Matrix denseA = DenseMatrix.Factory.zeros(2, 2);
+            denseA.setAsDouble(-25, 0, 0);
+            denseA.setAsDouble(0.4, 0, 1);
+            denseA.setAsDouble(-8.6, 1, 0);
+            denseA.setAsDouble(-17.2, 1, 1);
+            Matrix denseB = DenseMatrix.Factory.zeros(2, 1);
+            denseB.setAsDouble(-160.19+Math.pow(distanceMap.get("a4:1a:3a:96:36:42"),2)-Math.pow(distanceMap.get("a4:1a:3a:96:4e:5d"),2),0,0);
+            denseB.setAsDouble(-168.99+Math.pow(distanceMap.get("a4:1a:3a:96:36:42"),2)-Math.pow(distanceMap.get("a4:1a:3a:95:9c:82"),2),1,0);
+            //Matrix denseResult = denseA.inv().mtimes(denseB);
+            Matrix denseResult = (denseA.transpose().mtimes(denseA)).inv().mtimes(denseA.transpose()).mtimes(denseB);
+            forecast_x = denseResult.getAsFloat(0,0);
+            forecast_y = denseResult.getAsFloat(1,0);
+        }
+        //返回数据
+        JSONObject paramJson = new JSONObject();
+        paramJson.put("forecast_x",forecast_x);
+        paramJson.put("forecast_y",forecast_y);
+        System.out.println("forecast_x:"+forecast_x+",forecast_y:"+forecast_y);
+        return paramJson;
+    }
+
+}
